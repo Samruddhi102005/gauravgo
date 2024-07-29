@@ -2,64 +2,107 @@ using System.Collections;
 using System.Collections.Generic;
 using UnityEngine;
 
-
-
 public class PlayerMovement : MonoBehaviour
 {
-    public float speed = 5f;
-    public float jumpForce = 10f;
-    private Rigidbody2D rb;
-    private bool isGrounded = true;
-    private bool isUpsideDown = false;
-    private bool isGravityInverted = false;
+    [Header("Movement Controls")]
+    [SerializeField] float speed = 5f;
+    [SerializeField] float jumpForce = 10f;
+    [Range(0f, 1f)][SerializeField] float stopFactor = 0.5f;
+    [SerializeField] Transform feetPos;
+    [SerializeField] Vector3 groundCheckSize = new Vector3(1, 0.05f, 1);
+    [SerializeField] LayerMask whatIsGround;
 
+    [Header("Better Platformer")]
+    [SerializeField] private float hangTime = 0.1f;
+    private float hangTimeCtr = 0;
+    [SerializeField] private float jumpBufferLength = 0.1f;
+    private float jumpBufferCtr = 0;
+
+    // Private variables
+    private Rigidbody2D rb;
+    private float movement;
+    private bool isGrounded = false;
+    private bool canJump = false;
+    private bool isUpsideDown = false;
+
+    // Start is called before the first frame update
     void Start()
     {
         rb = GetComponent<Rigidbody2D>();
     }
 
-    void Update()
+    void GetInput()
     {
-        float moveInput = Input.GetAxis("Horizontal");
-        rb.velocity = new Vector2(moveInput * speed, rb.velocity.y);
+        movement = Input.GetAxisRaw("Horizontal");
 
-        if (Input.GetKeyDown(KeyCode.Space) && isGrounded)
+        // Check if grounded by a physics check
+        isGrounded = Physics2D.OverlapBox(feetPos.position, groundCheckSize, 0f, whatIsGround);
+
+        // Hang/Coyote Time
+        if (isGrounded) { hangTimeCtr = hangTime; }
+        else hangTimeCtr -= Time.deltaTime;
+
+        // Jump Buffer
+        if (Input.GetButtonDown("Jump")) { jumpBufferCtr = jumpBufferLength; }
+        else jumpBufferCtr -= Time.deltaTime;
+
+        // Jump Detection
+        if (hangTimeCtr > 0f && jumpBufferCtr > 0)
         {
-            Jump();
+            canJump = true;
+            jumpBufferCtr = 0;
         }
 
-        // Check if the 'F' key is pressed
+        // Controlled Jump
+        if (Input.GetButtonUp("Jump") && rb.velocity.y > 0)
+        {
+            rb.velocity = new Vector2(rb.velocity.x, rb.velocity.y * stopFactor);
+        }
+
+        // Inversion
         if (Input.GetKeyDown(KeyCode.F))
         {
-            // Toggle the gravity scale
-            isGravityInverted = !isGravityInverted;
-            rb.gravityScale = isGravityInverted ? -1 : 1;
+            InvertPlayer();
         }
     }
 
-    void Jump()
+    void InvertPlayer()
     {
-        if (Input.GetKeyDown(KeyCode.Space) && isGrounded)
+        isUpsideDown = !isUpsideDown;
+
+        if (isUpsideDown)
         {
-            if (rb.gravityScale > 0)
-            {
-                rb.velocity = new Vector2(rb.velocity.x, jumpForce); // Jump with positive gravity
-            }
-            else if (rb.gravityScale < 0)
-            {
-                rb.velocity = new Vector2(rb.velocity.x, -jumpForce); // Jump with inverted gravity
-            }
+            transform.rotation = Quaternion.Euler(0, 0, 180);
+            rb.gravityScale *= -1; // Invert gravity
+        }
+        else
+        {
+            transform.rotation = Quaternion.Euler(0, 0, 0);
+            rb.gravityScale *= -1; // Restore gravity
         }
     }
 
-    void OnCollisionEnter2D(Collision2D collision)
+    void Update()
     {
-        if (collision.gameObject.CompareTag("Ground"))
+        GetInput();
+    }
+
+    void FixedUpdate()
+    {
+        var vel = rb.velocity;
+        vel.x = movement * speed;
+        rb.velocity = vel;
+
+        if (canJump)
         {
-            isGrounded = true;
+            rb.AddForce(Vector2.up * jumpForce * (isUpsideDown ? -1 : 1), ForceMode2D.Impulse);
+            canJump = false;
         }
     }
 
-
-
+    void OnDrawGizmos()
+    {
+        Gizmos.color = Color.red;
+        Gizmos.DrawWireCube(feetPos.position, groundCheckSize);
+    }
 }
